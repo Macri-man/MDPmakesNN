@@ -1,0 +1,172 @@
+package nn
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"time"
+)
+
+// Activation function interface
+type ActivationFunc interface {
+	Activate(x float64) float64
+	Derivative(x float64) float64
+}
+
+// Sigmoid activation
+type Sigmoid struct{}
+
+func (s Sigmoid) Activate(x float64) float64 {
+	return 1 / (1 + math.Exp(-x))
+}
+func (s Sigmoid) Derivative(x float64) float64 {
+	sig := s.Activate(x)
+	return sig * (1 - sig)
+}
+
+// ReLU activation
+type ReLU struct{}
+
+func (r ReLU) Activate(x float64) float64 {
+	if x > 0 {
+		return x
+	}
+	return 0
+}
+func (r ReLU) Derivative(x float64) float64 {
+	if x > 0 {
+		return 1
+	}
+	return 0
+}
+
+// Layer represents a fully connected layer
+type Layer struct {
+	Weights    [][]float64
+	Biases     []float64
+	Activation ActivationFunc
+
+	inputs  []float64
+	outputs []float64
+	deltas  []float64
+}
+
+// NewLayer creates a new fully connected layer
+func NewLayer(inputSize, outputSize int, activation ActivationFunc) *Layer {
+	rand.Seed(time.Now().UnixNano())
+	w := make([][]float64, outputSize)
+	for i := range w {
+		w[i] = make([]float64, inputSize)
+		for j := range w[i] {
+			// Initialize small random weights
+			w[i][j] = rand.Float64()*0.2 - 0.1
+		}
+	}
+	b := make([]float64, outputSize)
+	return &Layer{
+		Weights:    w,
+		Biases:     b,
+		Activation: activation,
+	}
+}
+
+// Forward propagates input through the layer
+func (l *Layer) Forward(input []float64) []float64 {
+	l.inputs = input
+	output := make([]float64, len(l.Weights))
+	for i := 0; i < len(l.Weights); i++ {
+		sum := l.Biases[i]
+		for j := 0; j < len(input); j++ {
+			sum += l.Weights[i][j] * input[j]
+		}
+		output[i] = l.Activation.Activate(sum)
+	}
+	l.outputs = output
+	return output
+}
+
+// Backward calculates error and updates weights and biases
+func (l *Layer) Backward(errorGrad []float64, learningRate float64) []float64 {
+	l.deltas = make([]float64, len(l.outputs))
+	for i := range l.outputs {
+		l.deltas[i] = errorGrad[i] * l.Activation.Derivative(l.outputs[i])
+	}
+
+	// Calculate error gradient for previous layer
+	prevError := make([]float64, len(l.inputs))
+	for j := 0; j < len(l.inputs); j++ {
+		sum := 0.0
+		for i := 0; i < len(l.deltas); i++ {
+			sum += l.deltas[i] * l.Weights[i][j]
+		}
+		prevError[j] = sum
+	}
+
+	// Update weights and biases
+	for i := 0; i < len(l.Weights); i++ {
+		for j := 0; j < len(l.Weights[i]); j++ {
+			l.Weights[i][j] -= learningRate * l.deltas[i] * l.inputs[j]
+		}
+		l.Biases[i] -= learningRate * l.deltas[i]
+	}
+
+	return prevError
+}
+
+// NeuralNetwork represents a simple feed-forward NN
+type NeuralNetwork struct {
+	Layers []*Layer
+}
+
+// NewNeuralNetwork creates a network with given layer sizes and activations
+func NewNeuralNetwork(sizes []int, activations []ActivationFunc) *NeuralNetwork {
+	if len(sizes)-1 != len(activations) {
+		panic("Number of activations must be one less than number of layers")
+	}
+	nn := &NeuralNetwork{}
+	for i := 0; i < len(sizes)-1; i++ {
+		layer := NewLayer(sizes[i], sizes[i+1], activations[i])
+		nn.Layers = append(nn.Layers, layer)
+	}
+	return nn
+}
+
+// Forward forward propagates input through all layers
+func (nn *NeuralNetwork) Forward(input []float64) []float64 {
+	for _, layer := range nn.Layers {
+		input = layer.Forward(input)
+	}
+	return input
+}
+
+// Train trains the network on one example with mean squared error loss
+func (nn *NeuralNetwork) Train(input, target []float64, learningRate float64) {
+	output := nn.Forward(input)
+
+	// Calculate output error gradient (dLoss/dOutput)
+	errorGrad := make([]float64, len(output))
+	for i := range output {
+		errorGrad[i] = 2 * (output[i] - target[i])
+	}
+
+	// Backpropagate through layers in reverse order
+	for i := len(nn.Layers) - 1; i >= 0; i-- {
+		errorGrad = nn.Layers[i].Backward(errorGrad, learningRate)
+	}
+}
+
+// Predict runs forward pass only
+func (nn *NeuralNetwork) Predict(input []float64) []float64 {
+	return nn.Forward(input)
+}
+
+// Utility function to print weights (for debug)
+func (nn *NeuralNetwork) PrintWeights() {
+	for i, layer := range nn.Layers {
+		fmt.Printf("Layer %d weights:\n", i)
+		for _, w := range layer.Weights {
+			fmt.Println(w)
+		}
+		fmt.Printf("Biases: %v\n", layer.Biases)
+	}
+}
