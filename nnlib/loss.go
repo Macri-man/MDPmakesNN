@@ -1,20 +1,29 @@
-package nn
+package nnlib
 
 import "math"
 
-// CrossEntropyLoss computes loss and gradient for classification
+// CrossEntropyLoss computes the cross-entropy loss and its gradient.
+// predicted: output probabilities (after softmax), target: one-hot encoded labels.
 func CrossEntropyLoss(predicted, target []float64) (loss float64, grad []float64) {
+	const epsilon = 1e-15
 	grad = make([]float64, len(predicted))
+
 	for i := range predicted {
-		p := math.Max(predicted[i], 1e-15)
+		// Clamp predicted probabilities for numerical stability
+		p := math.Min(math.Max(predicted[i], epsilon), 1-epsilon)
 		t := target[i]
+
+		// Cross-entropy loss component for class i
 		loss -= t * math.Log(p)
-		grad[i] = predicted[i] - t
+
+		// Gradient of cross-entropy wrt predicted (assuming softmax output)
+		grad[i] = p - t
 	}
-	return
+	return loss, grad
 }
 
-// MSELoss computes mean squared error loss and gradient (optional)
+// MSELoss computes mean squared error loss and its gradient.
+// predicted: predicted values, target: true values.
 func MSELoss(predicted, target []float64) (loss float64, grad []float64) {
 	grad = make([]float64, len(predicted))
 	for i := range predicted {
@@ -23,5 +32,5 @@ func MSELoss(predicted, target []float64) (loss float64, grad []float64) {
 		grad[i] = 2 * diff
 	}
 	loss /= float64(len(predicted))
-	return
+	return loss, grad
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	nn "MDPmakesNN/nnlib"
 	"fmt"
 )
 

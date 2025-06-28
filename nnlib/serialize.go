@@ -1,4 +1,4 @@
-package nn
+package nnlib
 
 import (
 	"encoding/json"
