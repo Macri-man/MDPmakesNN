@@ -1,9 +1,12 @@
 package nn
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -38,6 +41,41 @@ func (r ReLU) Derivative(x float64) float64 {
 		return 1
 	}
 	return 0
+}
+
+type Softmax struct {
+	lastOutput []float64
+}
+
+func (s *Softmax) ActivateVector(input []float64) []float64 {
+	maxVal := input[0]
+	for _, v := range input {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+	expSum := 0.0
+	output := make([]float64, len(input))
+	for i, v := range input {
+		exp := math.Exp(v - maxVal) // for numerical stability
+		output[i] = exp
+		expSum += exp
+	}
+	for i := range output {
+		output[i] /= expSum
+	}
+	s.lastOutput = output
+	return output
+}
+
+// Not used in most practical backprop, but placeholder to satisfy interface
+func (s *Softmax) Activate(x float64) float64 {
+	return x // Softmax works on vector, not scalar
+}
+
+// Derivative for softmax (used only with cross-entropy loss)
+func (s *Softmax) Derivative(x float64) float64 {
+	return 1 // placeholder, not used directly
 }
 
 // Layer represents a fully connected layer
@@ -139,6 +177,18 @@ func (nn *NeuralNetwork) Forward(input []float64) []float64 {
 	return input
 }
 
+func ArgMax(vec []float64) int {
+	maxIdx := 0
+	maxVal := vec[0]
+	for i, v := range vec {
+		if v > maxVal {
+			maxVal = v
+			maxIdx = i
+		}
+	}
+	return maxIdx
+}
+
 // Train trains the network on one example with mean squared error loss
 func (nn *NeuralNetwork) Train(input, target []float64, learningRate float64) {
 	output := nn.Forward(input)
@@ -155,6 +205,55 @@ func (nn *NeuralNetwork) Train(input, target []float64, learningRate float64) {
 	}
 }
 
+// TrainBatch trains on a batch of input/target pairs
+func (nn *NeuralNetwork) TrainBatch(inputs, targets [][]float64, learningRate float64) {
+	batchSize := len(inputs)
+
+	// Accumulate gradients
+	layerGrads := make([][][]float64, len(nn.Layers))
+	layerBiasGrads := make([][]float64, len(nn.Layers))
+	for i, layer := range nn.Layers {
+		layerGrads[i] = make([][]float64, len(layer.Weights))
+		for j := range layerGrads[i] {
+			layerGrads[i][j] = make([]float64, len(layer.Weights[j]))
+		}
+		layerBiasGrads[i] = make([]float64, len(layer.Biases))
+	}
+
+	// Process each sample
+	for i := 0; i < batchSize; i++ {
+		output := nn.Forward(inputs[i])
+		_, grad := CrossEntropyLoss(output, targets[i])
+
+		// Backpropagate
+		errorGrad := grad
+		for l := len(nn.Layers) - 1; l >= 0; l-- {
+			layer := nn.Layers[l]
+			layer.Backward(errorGrad, 0) // Don't update weights yet
+			errorGrad = make([]float64, len(layer.inputs))
+			for j := 0; j < len(layer.inputs); j++ {
+				for k := 0; k < len(layer.deltas); k++ {
+					errorGrad[j] += layer.deltas[k] * layer.Weights[k][j]
+					layerGrads[l][k][j] += layer.deltas[k] * layer.inputs[j]
+				}
+			}
+			for k := 0; k < len(layer.deltas); k++ {
+				layerBiasGrads[l][k] += layer.deltas[k]
+			}
+		}
+	}
+
+	// Apply averaged gradients
+	for i, layer := range nn.Layers {
+		for j := 0; j < len(layer.Weights); j++ {
+			for k := 0; k < len(layer.Weights[j]); k++ {
+				layer.Weights[j][k] -= learningRate * layerGrads[i][j][k] / float64(batchSize)
+			}
+			layer.Biases[j] -= learningRate * layerBiasGrads[i][j] / float64(batchSize)
+		}
+	}
+}
+
 // Predict runs forward pass only
 func (nn *NeuralNetwork) Predict(input []float64) []float64 {
 	return nn.Forward(input)
@@ -168,5 +267,73 @@ func (nn *NeuralNetwork) PrintWeights() {
 			fmt.Println(w)
 		}
 		fmt.Printf("Biases: %v\n", layer.Biases)
+	}
+}
+
+func Load(filename string) (*NeuralNetwork, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var s serialModel
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, err
+	}
+
+	nn := &NeuralNetwork{}
+	for _, l := range s.Layers {
+		layer := &Layer{
+			Weights:    l.Weights,
+			Biases:     l.Biases,
+			Activation: activationFromName(l.Activation),
+		}
+		nn.Layers = append(nn.Layers, layer)
+	}
+	return nn, nil
+}
+
+func (nn *NeuralNetwork) Save(filename string) error {
+	s := serialModel{}
+	for _, layer := range nn.Layers {
+		s.Layers = append(s.Layers, serialLayer{
+			Weights:    layer.Weights,
+			Biases:     layer.Biases,
+			Activation: activationName(layer.Activation),
+		})
+	}
+
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filename, data, 0644)
+}
+
+// Activation name helpers
+func activationName(act ActivationFunc) string {
+	switch act.(type) {
+	case Sigmoid:
+		return "sigmoid"
+	case ReLU:
+		return "relu"
+	case *Softmax:
+		return "softmax"
+	default:
+		return "unknown"
+	}
+}
+
+func activationFromName(name string) ActivationFunc {
+	switch strings.ToLower(name) {
+	case "sigmoid":
+		return Sigmoid{}
+	case "relu":
+		return ReLU{}
+	case "softmax":
+		return &Softmax{}
+	default:
+		panic("unknown activation: " + name)
 	}
 }
