@@ -1,0 +1,7 @@
+state,action,next,prob,reward,terminal
+A,left,A,0.5,5,false
+A,left,B,0.5,10,false
+A,right,C,1.0,0,false
+B,left,A,1.0,-1,false
+B,right,C,1.0,2,false
+C,,C,1.0,0,true

@@ -1,0 +1,56 @@
+{
+  "discount": 0.9,
+  "iterations": 100,
+  "epsilon": 0.01,
+  "states": [
+    {
+      "name": "A",
+      "terminal": false
+    },
+    {
+      "name": "B",
+      "terminal": false
+    },
+    {
+      "name": "C",
+      "terminal": true
+    }
+  ],
+  "transitions": [
+    {
+      "state": "A",
+      "action": "left",
+      "next": "A",
+      "prob": 0.5,
+      "reward": 5
+    },
+    {
+      "state": "A",
+      "action": "left",
+      "next": "B",
+      "prob": 0.5,
+      "reward": 10
+    },
+    {
+      "state": "A",
+      "action": "right",
+      "next": "C",
+      "prob": 1.0,
+      "reward": 0
+    },
+    {
+      "state": "B",
+      "action": "left",
+      "next": "A",
+      "prob": 1.0,
+      "reward": -1
+    },
+    {
+      "state": "B",
+      "action": "right",
+      "next": "C",
+      "prob": 1.0,
+      "reward": 2
+    }
+  ]
+}
